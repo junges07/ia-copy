@@ -1,11 +1,11 @@
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain_community.callbacks import get_openai_callback
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.chains import ConversationChain
 from ..config import OPENAI_API_KEY
 
 
-def get_llm(model: str = "gpt-4.1-mini", temperature: float = 0):
+def get_llm(model: str = "gpt-4o-mini", temperature: float = 0):
     """Retorna uma instância configurada do ChatOpenAI."""
     return ChatOpenAI(
         model=model,
@@ -14,7 +14,7 @@ def get_llm(model: str = "gpt-4.1-mini", temperature: float = 0):
     )
 
 
-def run_llm(prompt: str, model: str = "gpt-4.1-mini", temperature: float = 0):
+def run_llm(prompt: str, model: str = "gpt-4o-mini", temperature: float = 0):
     """Executa um prompt simples (sem memória)."""
     llm = get_llm(model, temperature)
     with get_openai_callback() as cb:
@@ -27,20 +27,19 @@ def run_llm(prompt: str, model: str = "gpt-4.1-mini", temperature: float = 0):
     return result
 
 
-def create_conversational_chain(model: str = "gpt-4.1-mini", temperature: float = 0, memory_limit: int = 5):
-
-    llm = get_llm(model, temperature)
-    from langchain.memory import ConversationBufferWindowMemory
-    from langchain.chains import ConversationChain
+def create_conversational_chain(model="gpt-4o", memory_limit=4):
+    """Cria uma cadeia conversacional com memória limitada (compatível)."""
+    llm = ChatOpenAI(model=model, temperature=0.6, api_key=OPENAI_API_KEY)
 
     memory = ConversationBufferWindowMemory(
-        k=memory_limit,  # número de interações lembradas
+        k=memory_limit,
+        memory_key="history",
         return_messages=True
     )
-    conversation = ConversationChain(
+
+    chain = ConversationChain(
         llm=llm,
         memory=memory,
-        verbose=True
+        verbose=False
     )
-    return conversation
-
+    return chain

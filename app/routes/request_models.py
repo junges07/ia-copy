@@ -1,4 +1,5 @@
 from pydantic import BaseModel
 
 class UserRequest(BaseModel):
-    data: str
+    data: str   
+    user: str

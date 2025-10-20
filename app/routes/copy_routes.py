@@ -4,8 +4,9 @@ from fastapi.responses import JSONResponse
 from ..routes.request_models import UserRequest
 from ..hooks.llm_hook import run_llm
 from ..hooks.embedding_hook import get_embedding, is_duplicate_embedding
-from ..hooks.supabase_hook import insert_team_memory, get_team_memory   
-from ..hooks.llm_hook import run_llm, create_conversational_chain
+from ..hooks.supabase_hook import insert_team_memory, get_team_memory, insert_individual_memory, get_individual_memory
+from ..hooks.llm_hook import run_llm, create_conversational_chain 
+import uuid  
 
 print("✅ copy_routes carregando...")
 
@@ -27,88 +28,275 @@ async def options_generate_copy():
 @router.post("/generate_copy")
 async def classify_embedding(request: UserRequest):
     message = request.data
+    lovable_user_name = request.user.strip().lower()
     print(message)
-    prompt = f"""
-        Você é um assistente especializado em marketing digital e análise de preferências de comunicação.
+    prompt = """
 
-        Sua tarefa é analisar mensagens enviadas por usuários e decidir quais partes contêm informações
-        importantes que devem ser armazenadas no banco de dados de preferências da equipe de
-        gestores de tráfego e marketing.
+        Você é um analisador semântico especializado em identificar **informações úteis, permanentes e inferíveis sobre empresas, marcas e clientes**.
+        Sua tarefa é analisar mensagens de usuários e extrair **qualquer dado que revele o que uma marca é, faz, vende, oferece, comunica ou prefere** — mesmo quando isso estiver implícito em pedidos operacionais (“faça uma copy...”, “crie um post sobre...”).
+        ---
 
-        ⚡ O que deve ser considerado relevante para salvar:
-        - Informações que descrevem a **identidade da empresa** (ex: "é uma cervejaria artesanal", "atua no setor agro", "é uma imobiliária de alto padrão").
-        - Informações sobre **segmento, nicho de mercado, público-alvo ou tom de comunicação da marca** (ex: "atua no mercado B2B", "usa linguagem formal").
-        - Informações que definem **estilo ou diretrizes de comunicação permanentes**.
+        ### 🎯 OBJETIVO
 
-        ❌ O que NÃO deve ser salvo:
-        - Instruções temporárias sobre um único post ou campanha (ex: "faça uma copy sobre a IPA", "crie uma legenda curta").
-        - Dores, soluções e CTAs específicos de um briefing único.
+        Registrar qualquer informação **coletiva** que descreva ou implique:
 
-        ⚠️ Importante:
-        - Mesmo que a mensagem peça uma copy para um post, se houver junto informações sobre a identidade da empresa, salve apenas essas informações permanentes.
-        - Ignore os detalhes transitórios do post.
+        - o que a empresa **é** (“é uma pastelaria”)
+        - o que ela **faz ou oferece** (“atua com tráfego pago”, “vende roupas femininas”)
+        - seu **segmento, público ou nicho**
+        - seu **tom de voz, linguagem, estilo ou estética**
+        - suas **preferências ou padrões de comunicação**
+        - ou **associações contextuais** que indiquem área de atuação, mesmo sem descrição direta  
+        → ex: “faça um post para a Exemplo X sobre tráfego pago” → a Exemplo X  trabalha com tráfego pago.
 
-        🧩 Regras obrigatórias de resposta:
-        - Sempre responda com **um único JSON válido**.
-        - O campo "relevante" deve ser "coletivo" se a informação for permanente, ou false se não for.
-        - O campo "empresa" deve sempre existir (ex: "serrana", "impulse", "cliente", "coletivo").
-        - O campo "informacao" deve conter a diretriz ou estar vazio ("").
+        ---
 
-        📘 Exemplo 1 (mensagem relevante):
-        {{
+        ### ⚙️ PRINCÍPIO DE INFERÊNCIA E DETECÇÃO DE EMPRESAS
+
+       > Sempre que houver uma empresa, marca ou cliente mencionado **em conjunto com um tema, produto ou tipo de conteúdo**, infira que **essa empresa tem relação com aquele tema**.
+
+        Exemplo:
+        - “faça um post para a Empresa X sobre pastéis” → “a Empresa X vende pastéis”
+        - “faça uma copy para a Empresa X sobre tráfego pago” → “a Empresa X trabalha com tráfego pago”
+        - “gera uma copy para a Empresa Xsobre moda feminina” → “a Empresa X atua com moda feminina” 
+
+        ---
+
+        ### ⚠️ REGRAS DE RELEVÂNCIA
+
+        Considere como **relevante** (salvar):
+        - toda frase que revele ou **implique** informações sobre o negócio, produto, setor, tom ou estilo da marca.
+        - frases em que uma **ação** (ex: “faça um post...”) está **ligada a um tema específico** (ex: “tráfego pago”, “pastéis”, “moda feminina”), indicando **campo de atuação da empresa**.
+
+        Considere como **falso (não salvar)**:
+        - instruções puramente operacionais ou pessoais (“envie a copy”, “não quero arte”, “use mais texto”)
+        - mensagens sem referência a empresa, marca ou tema de negócio
+
+        ---
+
+        ### 🧩 FORMATO DE SAÍDA
+
+        Responda **apenas com JSON válido**, no formato:
+
+        ```json
+        {
+        "relevante": "coletivo" ou false,
+        "empresa": "<nome da marca ou 'coletivo'>",
+        "informacao": "<texto breve descrevendo o que foi inferido>"
+        }
+
+        ### 📘 EXEMPLOS
+
+        **Exemplo 1 — Informação direta:**
+        faça uma copy para a Empresa X, ela é uma pastelaria artesanal
+        {
         "relevante": "coletivo",
-        "empresa": "serrana",
-        "informacao": "usa letras minúsculas nas legendas"
-        }}
+        "empresa": "Empresa X",
+        "informacao": "a Empresa X é uma pastelaria"
+        }
 
-        📘 Exemplo 2 (mensagem não relevante):
-        {{
+        **Exemplo 2 — Informação mista (pedido + dado de estilo):**
+        faça uma copay para a Empresa X, ela gosta de legendas mais simples
+        {
+        "relevante": "coletivo",
+        "empresa": "Empresa X",
+        "informacao": "a Empresa X gosta de legendas mais simples"
+        }
+
+        **Exemplo 3 — Estilo de linguagem:**
+        a  Empresa X gosta de legendas simples
+        {
+        "relevante": "coletivo",
+        "empresa": " Empresa X",
+        "informacao": " Empresa X gosta de legendas simples"
+        }
+
+        **Exemplo 4 — Irrelevante (pedido sem contexto):**
+        faça uma copy agora
+        {
         "relevante": false,
-        "empresa": "serrana",
+        "empresa": "Empresa X",
         "informacao": ""
-        }}
+        }
+
+        **Exemplo 5 — Implícito (com inferência)::**
+        faça um post para a  Empresa X sobre estratégias de tráfego pago
+        {
+        "relevante": "coletivo" ,
+        "empresa": " Empresa X",
+        "informacao": " Empresa X faz estratégias de tráfego pago"
+        }
 
         Mensagem do usuário:
-        {message}
-        """
+                """ + message
 
+    verification_prompt = """
 
+        Você é um **classificador lógico** responsável por identificar **preferências pessoais permanentes** de um usuário.
+        Seu trabalho é **analisar a mensagem recebida** e decidir **objetivamente** se ela contém uma instrução ou preferência **individual e persistente** — ou se é apenas um pedido operacional genérico.
 
-    result = run_llm(prompt, model="gpt-4.1-mini")
+        Você **NÃO deve gerar interpretações criativas**.  
+        Você **NÃO deve inventar informações**.  
+        Você **DEVE responder apenas com JSON válido, sem texto adicional**.
+
+        ---
+
+       ## 🎯 OBJETIVO
+        Detectar **qualquer instrução, ajuste ou preferência pessoal** que mude o comportamento do sistema,
+        mesmo que não mencione explicitamente "eu" ou "meu estilo".
+
+        Exemplos típicos:
+        - “Não me envie mais o texto da arte, apenas a legenda.”
+        - “Quero legendas mais curtas.”
+        - “Prefiro legendas com humor.”
+        - “Sou designer e quero textos de arte mais visuais.”
+        - “Pode tirar o CTA das próximas copies.”
+        - “Sempre me envie 3 variações.”
+
+        ---
+
+        ### 🧩 CLASSIFICAÇÃO
+
+        Responda com **um único JSON válido** contendo os seguintes campos:
+
+        ```json
+        {
+        "relevante": "individual" ou false,
+        "informacao": "<descrição clara e curta da preferência ou instrução pessoal>"
+        }
+
+        ⚙️ REGRAS DE DECISÃO
+
+        -Considere como relevante (individual):
+        -Instruções que alteram o comportamento do sistema apenas para esse usuário
+        -Preferências de estilo, formato, conteúdo ou linguagem pessoal
+        -Frases iniciadas com verbos de ação: “quero”, “prefiro”, “não me envie”, “gosto”, “faça de outro jeito”, “mude para...”
+        -Mensagens que expressam identidade funcional (“sou designer”, “sou gestor”, “sou copywriter”)
+        -Considere como falso (não relevante):
+        -Pedidos genéricos que poderiam ser feitos por qualquer um (“faça uma copy sobre o produto X”)
+        -Instruções que dizem respeito ao cliente, empresa ou público (devem ir para a LLM coletiva)
+
+        ### 🧠 EXEMPLOS
+
+        ##Exemplo 01 - Instrução pessoal clara:
+        não me envie mais o texto da arte, apenas a legenda
+        {
+            "relevante": "individual",
+            "informacao": "o usuário quer receber apenas a legenda, sem o texto da arte"
+        }
+
+        ##Exemplo 02 - Preferência de estilo:
+        sou designer e quero um texto da arte mais aprofundado
+       {
+            "relevante": "individual",
+            "informacao": "o usuário é designer e quer textos de arte mais detalhados e visuais"
+        }
+        
+        ##Exemplo 03 - Instrução temporária, não relevante:
+        faça uma copy sobre o catálogo novo da Empresa X
+       {
+            "relevante": false,
+            "informacao": ""
+        }
+        
+        ##Exemplo 04 - Mistura (mas foco pessoal):
+        a Impulse quer continuar com o mesmo estilo, e eu quero legendas mais curtas
+      {
+        "relevante": "individual",
+        "informacao": "o usuário prefere legendas mais curtas"
+        }
+    """ + message
+ 
+    result = run_llm(prompt, model="gpt-4o-mini")
+    verification_result = run_llm(verification_prompt, model="gpt-4o-mini")
+
 
     try:
-        match = re.search(r"\{.*\}", result, re.DOTALL)
-        if not match:
-            return {"copy": f"Erro: IA não retornou JSON. {result}"}
-        jsonresponse = json.loads(match.group(0))
+        match_main = re.search(r"\{.*\}", result, re.DOTALL)
+        if match_main:
+            json_main = json.loads(match_main.group(0))
+            empresa_detectada = json_main.get("empresa", "").strip()
+            print("🧩 IA_COLETIVA → Empresa detectada:", 
+                f"'{empresa_detectada}'" if empresa_detectada else "❌ Nenhuma empresa identificada")
+        else:
+            print("❌ IA_COLETIVA → Nenhum JSON encontrado na resposta.")
     except Exception as e:
-        return {"copy": f"Erro ao interpretar resposta: {str(e)}"}
+        print("❌ IA_COLETIVA → Erro ao decodificar JSON:", e)
+        print("Resposta bruta:", result)
 
-    reference = jsonresponse.get("empresa", "").strip().lower()
-    relevance = jsonresponse.get("relevante")
+    try: 
+        match_verif = re.search(r"\{.*\}", verification_result, re.DOTALL) 
+        if not match_verif: json_verif = {"verificacao": "erro", "detalhes": verification_result} 
+        else: json_verif = json.loads(match_verif.group(0)) 
+    except Exception: 
+        json_verif = {"verificacao": "erro", "detalhes": verification_result} 
 
-    
-    if reference not in CONVERSATIONS:
-        CONVERSATIONS[reference] = create_conversational_chain(model="gpt-4o-mini", memory_limit=5)
-    conversation = CONVERSATIONS[reference]
+    collective_reference = json_main.get("empresa", "").strip().lower()
+    print(collective_reference)
+    individual_reference = lovable_user_name.strip().lower()
+    conversation_key = f"{collective_reference or 'coletivo'}::{lovable_user_name}"
 
-    if relevance == "coletivo":
-        content = jsonresponse.get("informacao")
-        embedding = get_embedding(content)
-        existing = get_team_memory(reference)
+    if conversation_key not in CONVERSATIONS:
+        CONVERSATIONS[conversation_key] = create_conversational_chain(
+        model="gpt-4o",
+        memory_limit=5
+    )
+    conversation = CONVERSATIONS[conversation_key]
 
-        if not is_duplicate_embedding(embedding, [i["embedding"] for i in existing.data]):
-            insert_team_memory(reference, content, embedding)
+    if json_main.get("relevante") == "coletivo":
+        content = (json_main.get("informacao") or "").strip()
+        if content:
+            embedding = get_embedding(content)
+            existing = get_team_memory(collective_reference)
+            if not is_duplicate_embedding(embedding, [i["embedding"] for i in (existing.data or [])]):
+                insert_team_memory(collective_reference, content, embedding)
 
-    bdcontent = get_team_memory(reference)
-    res = [item["content"] for item in bdcontent.data] if bdcontent.data else []
+
+    if json_verif.get("relevante") == "individual":
+        content = (json_verif.get("informacao") or "").strip()
+        print("content")
+        if content:
+            embedding = get_embedding(content)
+            existing = get_individual_memory(individual_reference)
+            if not is_duplicate_embedding(embedding, [i["embedding"] for i in (existing.data or [])]):
+                insert_individual_memory(individual_reference, content, embedding)
+
+    print(f"[DBG] Reference normalizada: '{collective_reference}'")
+    bdcontent = get_team_memory(collective_reference)
+    print(f"[DBG] Conteúdo retornado: {bdcontent.data if bdcontent and bdcontent.data else 'vazio'}")
+    if bdcontent and bdcontent.data:
+        res = "\n".join([f"- {item['content']}" for item in bdcontent.data])
+    else:
+        res = "Nenhuma diretriz coletiva registrada ainda."
+
+    usercontent = get_individual_memory(individual_reference)
+    if usercontent and usercontent.data:
+        user_res = "\n".join([f"- {item['content']}" for item in usercontent.data])
+    else:
+        user_res = "Nenhuma preferência individual registrada ainda."
+
 
     copy_prompt = f"""
     Briefing recebido:
     {message}
 
-    Brifing da Empresa (pode não ter):
+    Brifing da Empresa, contém diretrizes fixas sobre identidade, tom e estilo da marca:  (pode não ter):
     {res}
+
+    Briefing Individual contém preferências pessoais permanentes do user {lovable_user_name}, pode não ter nenhuma):
+    {user_res}
+
+    ### ⚙️ PRIORIDADE DE INTERPRETAÇÃO
+    Siga esta ordem **SEM exceções**:
+    1. As instruções do **Briefing Individual** têm prioridade máxima.  
+    → Se o usuário definiu que quer apenas legenda, siga isso mesmo que o Framework peça arte.  
+    → Se o usuário pediu “textos de arte mais visuais”, siga mesmo que o modelo coletivo não mencione isso.
+    2. O **Briefing Coletivo** vem logo em seguida.  
+    → Ele define a identidade, linguagem e estilo da marca.  
+    → Nunca contradiga suas diretrizes (ex: se a empresa usa letras minúsculas, nunca use maiúsculas).
+    3. O **Framework Impulse** é aplicado apenas **após** respeitar as duas camadas anteriores.
+
+    Se houver conflito entre eles, siga a hierarquia:
+    **Individual > Coletivo > Framework.**
 
     🎯 Objetivo Principal
     Criar textos para arte e legendas de anúncios no Instagram que incentivem leads B2B a clicar, cadastrar-se, baixar catálogos ou contatar especialistas. Sempre priorize a captação de leads qualificados (lojistas ou decisores com CNPJ).
@@ -142,9 +330,57 @@ async def classify_embedding(request: UserRequest):
     3. Crie: Gere arte e legenda separadas.
     4. Refine: Garanta persuasão, clareza e alinhamento B2B.
     5. Entregue: Apenas os dois blocos, sem texto extra a menos que pedido.
-    """
 
-    print(f"📜 Tamanho do prompt: {len(copy_prompt)} caracteres")
+    ✅ Exemplos de Referência (Use como Modelos)
+
+    ##Exemplo 1 — Fábrica de Cama e Banho (Nacional)
+    Texto da Arte:
+    Somente CNPJ
+    ATENÇÃO LOJISTA!
+    Conheça a Nova Coleção 2025 da La Dotta!
+    Cadastre-se e receba nosso novo catálogo!
+
+    Legenda:
+    ATENÇÃO LOJISTA!
+    Conheça a Coleção La Dotta 2025 e aumente suas vendas com nossos produtos.
+    Somos uma marca brasileira com fabricação própria, excelente custo-benefício e qualidade em cada item.
+    Clique abaixo e cadastre-se para receber o catálogo.
+    EXCLUSIVO PARA LOJISTAS COM CNPJ.
+
+    ##Exemplo 2 — Uniformes Personalizados em Tricot (Geolocalizado: Serra Gaúcha)
+    Texto da Arte:
+    Uniformes empresariais personalizados
+    SUÉTER
+    Sua logo aqui
+    Variedade de cores
+    Qualidade da Serra Gaúcha
+    Sem pedido mínimo
+    Entrega em 30 dias
+    Cadastre-se e receba mais informações.
+
+    Legenda:
+    Uniformes em suéter personalizados com a sua logo.
+    Uma opção versátil e confortável que transmite profissionalismo e eleva a imagem da sua empresa.
+    A Don Carli está no mercado há 20 anos e fica localizada na cidade de Farroupilha-RS.
+    Nossa fábrica oferece uma ampla gama de produtos, incluindo uniformes corporativos de alta qualidade.
+    Cadastre-se para receber o atendimento de um de nossos especialistas.
+    EXCLUSIVO PARA EMPRESAS COM CNPJ.
+
+    ##Exemplo Adicional — Decoração para Lojistas (Nacional, Foco em Dor de Variedade)
+    Texto da Arte:
+    ATENÇÃO LOJISTA DE DECORAÇÃO!
+    Atualize seu mix com itens exclusivos da DecoMax.
+    Qualidade premium e condições especiais.
+    Baixe o catálogo 2025 agora!
+
+    Legenda:
+
+    ATENÇÃO LOJISTA DE DECORAÇÃO!
+    Se o seu estoque precisa de mais variedade e itens de alta qualidade, a DecoMax é a solução ideal.
+    Com produção nacional e opções personalizadas, oferecemos condições comerciais atrativas para lojistas.
+    Baixe o catálogo 2025 e descubra como elevar suas vendas.
+    EXCLUSIVO PARA LOJISTAS COM CNPJ.
+    """
 
     try:
         response = conversation.invoke({"input": copy_prompt})
@@ -152,6 +388,5 @@ async def classify_embedding(request: UserRequest):
     except Exception as e:
         print("❌ Erro ao gerar copy:", e)
         return {"copy": f"Erro ao gerar copy: {str(e)}"}
-
-    print(f"🧠 Memória atual ({reference}): {conversation.memory.buffer}")
+    
     return {"copy": copy}
