@@ -353,12 +353,12 @@ Somente nomes próprios, marcas, empresas, negócios, lojas ou instituições de
     ✅ Exemplos de Referência (Use como Modelos)
 
     ##Exemplo 1 — Fábrica de Cama e Banho (Nacional)
+    
     Texto da Arte:
     Somente CNPJ
     ATENÇÃO LOJISTA!
     Conheça a Nova Coleção 2025 da La Dotta!
     Cadastre-se e receba nosso novo catálogo!
-
     Legenda:
     ATENÇÃO LOJISTA!
     Conheça a Coleção La Dotta 2025 e aumente suas vendas com nossos produtos.
@@ -367,6 +367,7 @@ Somente nomes próprios, marcas, empresas, negócios, lojas ou instituições de
     EXCLUSIVO PARA LOJISTAS COM CNPJ.
 
     ##Exemplo 2 — Uniformes Personalizados em Tricot (Geolocalizado: Serra Gaúcha)
+    
     Texto da Arte:
     Uniformes empresariais personalizados
     SUÉTER
@@ -376,7 +377,6 @@ Somente nomes próprios, marcas, empresas, negócios, lojas ou instituições de
     Sem pedido mínimo
     Entrega em 30 dias
     Cadastre-se e receba mais informações.
-
     Legenda:
     Uniformes em suéter personalizados com a sua logo.
     Uma opção versátil e confortável que transmite profissionalismo e eleva a imagem da sua empresa.
@@ -386,14 +386,13 @@ Somente nomes próprios, marcas, empresas, negócios, lojas ou instituições de
     EXCLUSIVO PARA EMPRESAS COM CNPJ.
 
     ##Exemplo Adicional — Decoração para Lojistas (Nacional, Foco em Dor de Variedade)
+
     Texto da Arte:
     ATENÇÃO LOJISTA DE DECORAÇÃO!
     Atualize seu mix com itens exclusivos da DecoMax.
     Qualidade premium e condições especiais.
     Baixe o catálogo 2025 agora!
-
     Legenda:
-
     ATENÇÃO LOJISTA DE DECORAÇÃO!
     Se o seu estoque precisa de mais variedade e itens de alta qualidade, a DecoMax é a solução ideal.
     Com produção nacional e opções personalizadas, oferecemos condições comerciais atrativas para lojistas.
