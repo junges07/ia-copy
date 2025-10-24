@@ -31,12 +31,12 @@ async def classify_embedding(request: UserRequest):
     lovable_user_name = request.user.strip().lower()
     print(message)
     prompt = """
-
+  
         Você é um analisador semântico especializado em identificar **informações úteis, permanentes e inferíveis sobre empresas, marcas e clientes**.
         Sua tarefa é analisar mensagens de usuários e extrair **qualquer dado que revele o que uma marca é, faz, vende, oferece, comunica ou prefere** — mesmo quando isso estiver implícito em pedidos operacionais (“faça uma copy...”, “crie um post sobre...”).
         ---
 
-        ### 🎯 OBJETIVO
+        ### OBJETIVO
 
         Registrar qualquer informação **coletiva** que descreva ou implique:
 
@@ -49,8 +49,20 @@ async def classify_embedding(request: UserRequest):
         → ex: “faça um post para a Exemplo X sobre tráfego pago” → a Exemplo X  trabalha com tráfego pago.
 
         ---
+        ### RESTRIÇÃO CRÍTICA
 
-        ### ⚙️ PRINCÍPIO DE INFERÊNCIA E DETECÇÃO DE EMPRESAS
+
+Nunca trate palavras como “cliente”, “pessoa”, “usuário”, “perfil”, “seguidores”, “público”, “consumidor” ou “comprador” como empresas.  
+Esses termos representam **entidades genéricas ou individuais**, não marcas ou negócios.
+
+Portanto:
+- “faça uma copy para um cliente sobre moda” → **irrelevante**
+- “faça uma copy para a Loja X sobre moda” → **relevante**
+
+Somente nomes próprios, marcas, empresas, negócios, lojas ou instituições devem ser reconhecidos como `empresa`.
+
+
+        ### PRINCÍPIO DE INFERÊNCIA E DETECÇÃO DE EMPRESAS
 
        > Sempre que houver uma empresa, marca ou cliente mencionado **em conjunto com um tema, produto ou tipo de conteúdo**, infira que **essa empresa tem relação com aquele tema**.
 
@@ -58,22 +70,21 @@ async def classify_embedding(request: UserRequest):
         - “faça um post para a Empresa X sobre pastéis” → “a Empresa X vende pastéis”
         - “faça uma copy para a Empresa X sobre tráfego pago” → “a Empresa X trabalha com tráfego pago”
         - “gera uma copy para a Empresa Xsobre moda feminina” → “a Empresa X atua com moda feminina” 
-
         ---
-
-        ### ⚠️ REGRAS DE RELEVÂNCIA
+        ### REGRAS DE RELEVÂNCIA
 
         Considere como **relevante** (salvar):
         - toda frase que revele ou **implique** informações sobre o negócio, produto, setor, tom ou estilo da marca.
         - frases em que uma **ação** (ex: “faça um post...”) está **ligada a um tema específico** (ex: “tráfego pago”, “pastéis”, “moda feminina”), indicando **campo de atuação da empresa**.
+        - Frases que expressem o que **não deve** ser usado ou dito em comunicações da empresa,
+  pois indicam **preferências de linguagem, estilo ou posicionamento**.
 
         Considere como **falso (não salvar)**:
-        - instruções puramente operacionais ou pessoais (“envie a copy”, “não quero arte”, “use mais texto”)
+        - Ordens que afetam apenas o individual e não empresas.
         - mensagens sem referência a empresa, marca ou tema de negócio
 
-        ---
 
-        ### 🧩 FORMATO DE SAÍDA
+        ### FORMATO DE SAÍDA
 
         Responda **apenas com JSON válido**, no formato:
 
@@ -84,7 +95,7 @@ async def classify_embedding(request: UserRequest):
         "informacao": "<texto breve descrevendo o que foi inferido>"
         }
 
-        ### 📘 EXEMPLOS
+        ### EXEMPLOS
 
         **Exemplo 1 — Informação direta:**
         faça uma copy para a Empresa X, ela é uma pastelaria artesanal
@@ -125,13 +136,12 @@ async def classify_embedding(request: UserRequest):
         "empresa": " Empresa X",
         "informacao": " Empresa X faz estratégias de tráfego pago"
         }
-
         Mensagem do usuário:
                 """ + message
 
     verification_prompt = """
 
-        Você é um **classificador lógico** responsável por identificar **preferências pessoais permanentes** de um usuário.
+           Você é um **classificador lógico** responsável por identificar **preferências pessoais permanentes** de um usuário.
         Seu trabalho é **analisar a mensagem recebida** e decidir **objetivamente** se ela contém uma instrução ou preferência **individual e persistente** — ou se é apenas um pedido operacional genérico.
 
         Você **NÃO deve gerar interpretações criativas**.  
@@ -140,7 +150,7 @@ async def classify_embedding(request: UserRequest):
 
         ---
 
-       ## 🎯 OBJETIVO
+       ## OBJETIVO
         Detectar **qualquer instrução, ajuste ou preferência pessoal** que mude o comportamento do sistema,
         mesmo que não mencione explicitamente "eu" ou "meu estilo".
 
@@ -153,8 +163,17 @@ async def classify_embedding(request: UserRequest):
         - “Sempre me envie 3 variações.”
 
         ---
+      ### REGRAS DE EXCLUSÃO
 
-        ### 🧩 CLASSIFICAÇÃO
+        **Nunca classifique como “individual” se:**
+          - houver menção a **empresa, marca, cliente, loja, negócio ou instituição**;
+          - o contexto indicar que a preferência se refere a **conteúdo de uma marca ou cliente** (ex: “a Ceres quer que...”, “para a Impulse use legendas curtas”);
+          - a mensagem envolver **produtos, campanhas, públicos ou temas de negócio**.
+          
+        Apenas preferências **do próprio usuário** (modo de envio, formato, estilo, quantidade, tom desejado etc.) são relevantes.
+
+        ---
+      ### CLASSIFICAÇÃO
 
         Responda com **um único JSON válido** contendo os seguintes campos:
 
@@ -164,7 +183,7 @@ async def classify_embedding(request: UserRequest):
         "informacao": "<descrição clara e curta da preferência ou instrução pessoal>"
         }
 
-        ⚙️ REGRAS DE DECISÃO
+        REGRAS DE DECISÃO
 
         -Considere como relevante (individual):
         -Instruções que alteram o comportamento do sistema apenas para esse usuário
@@ -175,7 +194,7 @@ async def classify_embedding(request: UserRequest):
         -Pedidos genéricos que poderiam ser feitos por qualquer um (“faça uma copy sobre o produto X”)
         -Instruções que dizem respeito ao cliente, empresa ou público (devem ir para a LLM coletiva)
 
-        ### 🧠 EXEMPLOS
+        ### EXEMPLOS
 
         ##Exemplo 01 - Instrução pessoal clara:
         não me envie mais o texto da arte, apenas a legenda
