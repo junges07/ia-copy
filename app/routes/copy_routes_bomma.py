@@ -4,39 +4,168 @@ from fastapi.responses import JSONResponse
 
 from .request_models import UserRequest
 
-from ..prompts.prompt_base_bomma import get_prompt_base_bomma
+from ..classifiers.intent_classifier import classify_intent
+from ..classifiers.memory_global_classifier import classify_global_memory
+from ..classifiers.context_message_classifier import classify_context_message
 
-from ..classifiers.intent_classifier import classify_intent, get_video_guidelines
+from ..tools.copy_tool import generate_bomma_copy_debug
+from ..tools.video_tool import generate_bomma_video_script_debug
 
-from ..classifiers.public_classifier import classify_public, get_public_prompt
-
-from ..classifiers.context_classifier import classify_context, get_context_prompt
-
-from ..classifiers.format_classifier import classify_format, get_format_prompt
-
-from ..prompts.style_correction_module import get_style_correction_examples
-
-from ..classifiers.memory_classifier import (
-    classify_individual_memory,
-    store_individual_memory,
-    load_individual_memory,
+from ..hooks.llm_hook import create_conversational_chain
+from ..hooks.supabase_hook import (
+    insert_team_memory_bomma,
+    get_messages,
+    get_contexts,
+    insert_individual_memory,
+    get_individual_memory,
 )
+from ..hooks.embedding_hook import get_embedding
 
-from ..hooks.llm_hook import run_llm, create_conversational_chain
-from ..hooks.prompt_templates import (
-    generate_prompt_copy_bomma,
-    generate_prompt_video_bomma,
-)
 
-print("✅ copy_routes carregando...")
+print("✅ copy_routes carregado")
 
 router = APIRouter()
-CONVERSATIONS = {}
 
 
-# ================================
-#   OPTIONS
-# ================================
+def get_identity_prompt():
+    return """
+Você é uma Inteligência Artificial especializada em COPYWRITING E ROTEIROS
+PARA ARQUITETOS.
+
+Seu papel principal é ajudar o usuário a criar, analisar e refinar:
+- copys escritas
+- roteiros de vídeo
+- estruturas de comunicação
+
+sempre voltadas à comunicação de PROJETOS DE ARQUITETURA, interiores
+e soluções espaciais criadas por arquitetos.
+
+Você NÃO vende imóveis.
+Você comunica o PROJETO DO ARQUITETO aplicado ao espaço.
+O imóvel é apenas o suporte físico.
+O produto real é a solução criativa, funcional e estética desenvolvida
+pelo arquiteto.
+
+Para construir uma comunicação verdadeiramente alinhada ao posicionamento
+da BOMMA, você precisa dominar com clareza três pilares fundamentais:
+
+1) Público-alvo  
+— Identificado no espectro de AA+ até BC, pois cada nível exige tom,
+ritmo, intenção e maturidade diferentes na comunicação.
+
+2) Contexto do projeto  
+— Tipo de espaço onde o PROJETO é aplicado (residência, apartamento,
+cobertura, casa de campo, casa de praia, studio, comercial,
+contexto urbano, etc.), pois isso define a experiência arquitetônica
+que será comunicada.
+
+3) Formato de aplicação  
+— Onde o conteúdo será utilizado:
+  • anúncios pagos (Meta Ads, Google Ads)
+  • legendas de Instagram
+  • posts institucionais
+  • roteiros de vídeo (anúncios, institucionais ou explicativos)
+
+Cada formato exige estrutura, ritmo, linguagem e estratégia próprios.
+
+IMPORTANTE — GERAÇÃO DE CONTEÚDO:
+- Você SÓ gera uma COPY quando o usuário ordenar explicitamente a criação de uma copy.
+- Você SÓ gera um ROTEIRO DE VÍDEO quando o usuário ordenar explicitamente
+  a criação de um roteiro de vídeo.
+- Em todos os outros casos, você conversa, orienta, analisa ou explica.
+
+Você também é capaz de:
+- Conversar normalmente com o usuário
+- Dar explicações técnicas e estratégicas
+- Sugerir abordagens de comunicação
+- Analisar textos enviados
+- Criar copys quando solicitado explicitamente
+- Criar roteiros de vídeo quando solicitado explicitamente
+
+SOBRE VÍDEOS:
+- Roteiros de vídeo devem priorizar:
+  • clareza técnica
+  • intenção de projeto
+  • decisões arquitetônicas
+  • funcionalidade e experiência do espaço
+- Nunca utilizar linguagem sensacionalista ou emocional exagerada.
+- Nunca utilizar termos típicos de venda imobiliária.
+
+Você POSSUI um sistema de memória:
+- Quando o usuário pede explicitamente para salvar alguma informação,
+  você registra isso como uma regra, diretriz ou preferência.
+- Essas informações podem ser reutilizadas no futuro.
+- Você usa essas memórias somente quando forem relevantes ao contexto da conversa.
+- As memórias podem ser individuais (apenas para aquele usuário)
+  ou coletivas (válidas para todos os usuários da BOMMA).
+- Essas informações são registradas de forma persistente.
+- Portanto, se alguém perguntar se você consegue SALVAR coisas,
+  a resposta correta é SIM.
+
+REGRAS FUNDAMENTAIS:
+- Você NÃO deve inventar memórias.
+- Você só usa memórias quando elas forem fornecidas como CONTEXTO ATIVO.
+- Você NÃO menciona banco de dados, embeddings ou sistemas internos.
+- Você responde sempre de forma clara, coerente e direta.
+"""
+
+
+def handle_conversation(msg: str, session_id: str, identify_contexts: dict) -> str:
+    active_contexts = identify_contexts.get("active_contexts", [])
+
+    identity_prompt = get_identity_prompt()
+
+    if active_contexts:
+        injected_context = "\n".join(
+            [f"- ({c['tag']}) {c['content']}" for c in active_contexts]
+        )
+
+        system_context_prompt = f"""
+        INSTRUÇÕES DE CONTEXTO ATIVAS (OBRIGATÓRIAS):
+        
+        {injected_context}
+        
+        Essas regras devem ser consideradas na resposta abaixo.
+        """
+    else:
+        system_context_prompt = ""
+
+    conversation = create_conversational_chain(
+        session_id=session_id, model="gpt-4o", temperature=0.6
+    )
+
+    final_input = f"""
+    {identity_prompt}
+
+    {system_context_prompt}
+
+    Mensagem do usuário:
+    {msg}
+    """
+
+    response = conversation.invoke({"input": final_input})
+
+    if isinstance(response, dict):
+        return response.get("response", "")
+
+    return str(response)
+
+
+def getStrMsgs(chat_id):
+    messages = get_messages(chat_id)
+
+    last_messages = messages[-10:]
+
+    output = ""
+    for msg in last_messages:
+        if msg.get("fromUser"):
+            output += f"[USER] {msg.get('content')}"
+        else:
+            output += f"[IA] {msg.get('content')}"
+        output += "\n"
+    return output
+
+
 @router.options("/generate_copy_bomma")
 async def options_generate_copy():
     return JSONResponse(
@@ -50,98 +179,65 @@ async def options_generate_copy():
     )
 
 
-# ================================
-#   POST — MAIN ROUTE
-# ================================
 @router.post("/generate_copy_bomma")
 async def classify_embedding(request: UserRequest):
 
     session_id = request.session_id
     message = request.data
-    lovable_user_name = request.user.strip().lower()
+    user_id = request.user.strip().lower()
 
     print("💬 Mensagem recebida:", message)
+    print("👤 user: ", user_id)
+    conversation_text = getStrMsgs(session_id)
 
-    content_type = classify_intent(message)
-    print(f"🧠 Tipo de conteúdo identificado: {content_type}")
+    saveInMemory = classify_global_memory(message, user_id)
+    print("Salvar Memória Colteviva: ", saveInMemory)
 
-    if content_type == "video":
-        video_prompt = get_video_guidelines()
+    if saveInMemory.get("should_save"):
+        if saveInMemory.get("scope") == "personal":
+            content = saveInMemory.get("content")
+            embedding = get_embedding(content)
+            insert_individual_memory(user_id, content, embedding)
+
+        else:
+            tag = saveInMemory.get("tag")
+            context = saveInMemory.get("context")
+            content = saveInMemory.get("content")
+
+            if not all([tag, context, content]):
+                print("❌ Dados insuficientes para salvar memória")
+            else:
+                insert_team_memory_bomma(tag, context, content)
+
+    existing_contexts = get_contexts()
+    individual_memorys = get_individual_memory(user_id)
+
+    identify_contexts = classify_context_message(
+        conversation_text, existing_contexts, individual_memorys.data
+    )
+    print("🧠 CONTEXTOS IDENTIFICADOS: ", identify_contexts.get("active_contexts"))
+
+    intent_type = classify_intent(message)
+    print(f"🧠 Tipo de conteúdo identificado: {intent_type}")
+
+    if intent_type == "copy":
+        result = generate_bomma_copy_debug(
+            message,
+            conversation_text,
+            identify_contexts.get("active_contexts"),
+            user_id,
+        )
+        return {"copy": result.get("copy")}
+
+    elif intent_type == "video":
+        result = generate_bomma_video_script_debug(
+            message,
+            conversation_text,
+            identify_contexts.get("active_contexts"),
+            user_id,
+        )
+        return {"copy": result.get("copy")}
+
     else:
-        video_prompt = ""
-
-    public = classify_public(message)
-    print("🎯 Público identificado:", public)
-    public_prompt = get_public_prompt(public)
-
-    print("public_prompt: ", public_prompt)
-
-    context = classify_context(message)
-    print("🧠 Contexto identificado:", context)
-    context_prompt = get_context_prompt(context)
-
-    fmt = classify_format(message)
-    print("🎯 Formato identificado:", fmt)
-    format_prompt = get_format_prompt(fmt)
-
-    json_verif = classify_individual_memory(message, lovable_user_name)
-    store_individual_memory(lovable_user_name, json_verif.get("info"))
-
-    user_res = load_individual_memory(lovable_user_name)
-
-    base = get_prompt_base_bomma()
-
-    style_examples = get_style_correction_examples()
-
-    copy_prompt = f"""
-        {base}
-        
-        INSTRUÇÃO IMPORTANTE (NÃO INCLUIR NA COPY):
-        Siga a hierarquia de prioridade abaixo ao gerar o texto:
-
-        1. Prompt-base Bomma (imutável, núcleo da identidade)
-        2. Correções de estilo (style_examples)
-        3. Contexto (residência, apartamento etc.)
-        4. Público-Alvo
-        5. Formato
-        6. Preferências individuais
-        7. Pedido original do usuário
-
-        NUNCA inclua esta lista no texto final.
-        NUNCA cite “hierarquia”, “passo a passo” ou termos estruturais.
-
-        Mensagem do usuário:
-        {message}
-
-        Preferências individuais:
-        {user_res}
-
-        Tipo de conteúdo: {content_type}
-        
-        Módulo de Público-Alvo (se aplicável): {public_prompt}
-        
-        Módulo de Formato: {format_prompt} 
-        
-        Módulo de Contexto: {context_prompt}
-        
-        Orientações de Vídeo (se for vídeo): {video_prompt}
-        
-        EXEMPLOS PARA REFERÊNCIA DE ESTILO (NÃO UTILIZAR NA COPY):
-        {style_examples}
-        
-        Gere o texto final seguindo tudo acima, inclusive sua hirearquia.
-        """
-
-    # ================================
-    # 5) GERA COPY
-    # ================================
-    conversation = create_conversational_chain(session_id=session_id, model="gpt-4o")
-
-    try:
-        response = conversation.invoke({"input": copy_prompt})
-        copy = response.get("response") if isinstance(response, dict) else str(response)
-    except Exception as e:
-        print("❌ Erro ao gerar copy:", e)
-        return {"copy": f"Erro ao gerar copy: {str(e)}"}
-
-    return {"copy": copy}
+        reply = handle_conversation(message, session_id, identify_contexts)
+        return {"copy": reply}

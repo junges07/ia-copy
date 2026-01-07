@@ -5,36 +5,93 @@ from ..hooks.llm_hook import run_llm
 
 
 def classify_intent(message: str) -> str:
-    """
-    Classifica se o conteúdo solicitado é:
-        - 'copy'
-        - 'video'
-
-    Retorna sempre UMA string: "copy" ou "video"
-    """
 
     intent_prompt = f"""
-    Analise a instrução abaixo e determine o tipo de conteúdo solicitado.
+Você é um classificador de intenção para uma IA de COPYWRITING PARA ARQUITETOS.
 
-    Mensagem: "{message}"
+Analise a instrução abaixo e determine o tipo de resposta desejada.
 
-    Responda apenas com JSON válido no formato:
-    {{
-        "tipo": "copy" ou "video"
-    }}
+Mensagem do usuário:
+"{message}"
 
-    Regras:
-    - Se o usuário menciona termos como:
-      "copy", "legenda", "post", "texto", "anúncio" → tipo = "copy"
+Você DEVE responder apenas com JSON válido, exatamente no formato:
+{{
+  "tipo": "copy" ou "video" ou "conversa"
+}}
 
-    - Se menciona:
-      "vídeo", "roteiro", "direcionamento", "gravação", "falas", "reels" → tipo = "video"
+Use rigorosamente as seguintes regras:
 
-    - Se o contexto indicar oralidade:
-      "falando", "em vídeo", "no vídeo" → tipo = "video"
+========================================
+1) CLASSIFICAR COMO "copy" QUANDO:
+========================================
+Sempre que o usuário:
+- Pede para CRIAR uma nova copy.
+- Pede para REFAZER uma copy.
+- Pede para AJUSTAR uma copy já criada.
+- Pede para DIMINUIR, ENCURTAR, AUMENTAR, SIMPLIFICAR ou REESCREVER uma copy.
+- Pede para MUDAR TOM, ESTILO, TAMANHO ou INTENSIDADE de uma copy.
 
-    - Caso ambíguo → tipo = "copy"
-    """
+Inclui expressões como:
+- "faça", "crie", "gere", "escreva", "produza"
+- "refine", "ajuste", "melhore", "reescreva"
+- "diminua", "encurte", "simplifique"
+- "deixa mais direto", "deixa mais técnico", "deixa mais emocional"
+
+⚠️ Importante:
+Se a mensagem tiver como objetivo FINAL produzir OU alterar um texto pronto → É "copy".
+Frases interrogativas, orientativas ou metalinguísticas sobre copywriting NÃO acionam geração de copy.
+
+Exemplos que DEVEM ser "copy":
+- “diminui essa copy”
+- “deixa essa legenda mais direta”
+- “refaz esse texto”
+- “reescreve mantendo a ideia”
+- “ajusta o tom dessa copy”
+- “melhora esse anúncio”
+
+========================================
+2) CLASSIFICAR COMO "video" QUANDO:
+========================================
+O usuário pede especificamente conteúdo FALADO ou roteiro para gravação:
+
+Exemplos:
+- "crie um roteiro de vídeo"
+- "me passe as falas para um reels"
+- "o que eu falo no vídeo?"
+- "direcionamento para vídeo"
+- "texto para eu gravar"
+
+========================================
+3) CLASSIFICAR COMO "conversa" QUANDO:
+========================================
+O usuário:
+- Está apenas tirando dúvida
+- Está dando feedback sem pedir reescrita
+- Está explicando regras
+- Está configurando comportamento
+- Está falando de futuro
+- Está pedindo opinião
+
+Exemplos que DEVEM ser "conversa":
+- "essa copy ficou boa?"
+- "como funciona sua geração de textos?"
+- "quero te ensinar meu estilo"
+- "sempre que eu pedir tal coisa, faça assim"
+- "essa legenda ficou muito formal"
+
+========================================
+4) REGRA DE SEGURANÇA MÁXIMA:
+========================================
+Se houver QUALQUER dúvida entre "copy" e "conversa":
+
+✅ Prefira "copy" somente quando houver intenção clara de ALTERAR ou GERAR um texto.
+✅ Caso contrário, use "conversa".
+
+Você deve:
+- Responder SOMENTE com JSON
+- Nunca explicar a classificação
+- Nunca escrever nada fora do JSON
+"""
 
     result = run_llm(intent_prompt, model="gpt-4o-mini")
 
@@ -42,22 +99,18 @@ def classify_intent(message: str) -> str:
     try:
         match = re.search(r"\{.*\}", result, re.DOTALL)
         json_data = json.loads(match.group(0)) if match else {}
-        return json_data.get("tipo", "copy").strip().lower()
+        tipo = json_data.get("tipo", "").strip().lower()
+
+        # Normaliza e garante saída válida
+        if tipo not in ("copy", "video", "conversa"):
+            return "conversa"
+        return tipo
     except:
-        return "copy"
+        # Fallback seguro: tratar como conversa normal para não acionar tool por engano
+        return "conversa"
 
 
 def get_video_guidelines() -> str:
-    """
-    Retorna as diretrizes oficiais da BOMMA para criação de ROTEIROS DE VÍDEO.
-    Esta função deve ser usada SOMENTE quando o classificador identificar
-    que o conteúdo desejado não é copy/legenda, e sim um vídeo.
-
-    O texto deixa claro que:
-    - o resultado DEVE ser um roteiro;
-    - NÃO pode ser copy, legenda, anúncio ou texto narrativo;
-    - deve seguir exatamente a estrutura Bomma.
-    """
 
     return """
 ====================================================

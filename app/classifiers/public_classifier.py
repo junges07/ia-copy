@@ -3,31 +3,27 @@ from ..hooks.llm_hook import run_llm
 
 
 def classify_public(message: str) -> str:
-    """
-    Classifica o público-alvo com base no documento oficial da Bomma.
-
-    Retornos possíveis:
-        - "AA+"      → Alto Luxo
-        - "AA_AB"    → Classe Alta
-        - "B_BC"     → Médio-Alto / Médio
-        - "nenhum"   → quando não há público explícito
-    """
 
     prompt = f"""
     Classifique o público-alvo citado ou sugerido na mensagem abaixo.
 
     Categorias possíveis:
-    - "aa_plus"      → alto luxo
-    - "aa_ab"    → classe alta
-    - "b_bc"     → médio-alto e médio
-    - "nenhum"   → quando nada indica público
+    - "aa_plus"
+    - "aa_ab"
+    - "b_bc"
+    - "nenhum"
 
     ➤ Regras:
     - Não invente público.
     - Só classifique se realmente houver indício.
-    - Se houver termos como “popular”, “econômico”, “acessível”, use "B_BC".
-    - Se mencionar “alto padrão”, “sofisticado”, “requinte”, “luxo”, classifique como "AA+" — MAS somente se fizer sentido.
-    - Se mencionar “classe média”, “AB”, “A”, “alto padrão acessível”, “famílias que buscam conforto”, etc → "AA_AB".
+    - "aa_plus" apenas quando houver sinais claros de:
+      exclusividade estética, obras autorais, projetos únicos, clientes de patrimônio elevado, arquitetura como arte.
+    - "aa_ab" quando houver:
+      foco em conforto, estilo de vida, famílias, sofisticação acessível.
+    - "b_bc" quando houver:
+      preço, economia, reformas, praticidade, custo-benefício, conquista.
+    - Se só houver termos genéricos → "nenhum".
+    - Se mencionar “classe média”, “AB”, “A”, “alto padrão acessível”, “famílias que buscam conforto” → "aa_ab".
     - Se ambíguo → "nenhum".
 
     Responda apenas com JSON:
@@ -38,46 +34,20 @@ def classify_public(message: str) -> str:
     Mensagem: "{message}"
     """
 
-    result = run_llm(prompt, model="gpt-4o-mini")
+    result = run_llm(prompt, model="gpt-4o-mini", temperature=0.0)
 
     try:
         match = re.search(r"\{.*\}", result, re.DOTALL)
         data = json.loads(match.group(0)) if match else {"publico": "nenhum"}
-        return data.get("publico", "nenhum")
+        return str(data.get("publico", "nenhum")).lower()
     except:
         return "nenhum"
 
 
-# module_public.py
-
-"""
-Módulo responsável por fornecer o bloco de prompt específico
-para cada público-alvo, conforme diretrizes do documento da Bomma.
-
-Este módulo **NÃO gera texto final** — apenas retorna
-orientações de escrita adequadas ao público solicitado.
-"""
-
-
 def get_public_prompt(public: str) -> str:
-    """
-    Retorna o prompt correspondente ao público-alvo identificado.
-
-    Possíveis valores:
-        - "aa_plus"
-        - "aa_ab"
-        - "b_bc"
-        - None
-
-    Caso o público seja None → retorna string vazia (nenhum módulo aplicado).
-    """
 
     if public is None:
         return ""
-
-    # ------------------------------------------------------------
-    # Público AA+ — “Alto Luxo” (mas sem usar a palavra “luxo”)
-    # ------------------------------------------------------------
     if public == "aa_plus":
         return """
 📌 DIRECIONAMENTO POR PÚBLICO — AA+ (Alto Luxo sem nomear)
@@ -116,10 +86,6 @@ mundo."
 
 ================================================================
 """
-
-    # ------------------------------------------------------------
-    # Público AA / AB — Classe Alta
-    # ------------------------------------------------------------
     if public == "aa_ab":
         return """
 📌 DIRECIONAMENTO POR PÚBLICO — AA / AB (Classe Alta)
@@ -158,9 +124,6 @@ em perfeita sintonia"
 ================================================================
 """
 
-    # ------------------------------------------------------------
-    # Público B / BC — Médio-Alto e Médio
-    # ------------------------------------------------------------
     if public == "b_bc":
         return """
 📌 DIRECIONAMENTO POR PÚBLICO — B / BC (Médio-Alto / Médio)
@@ -197,5 +160,4 @@ para o seu dia a dia, sem abrir mão da estética"
 ================================================================
 """
 
-    # Caso nada seja reconhecido
     return ""

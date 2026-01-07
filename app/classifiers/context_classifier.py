@@ -6,50 +6,32 @@ from ..hooks.llm_hook import run_llm
 def classify_context(message: str) -> str:
     msg = message.lower().strip()
 
-    # ==============================
-    # 1) REGRAS DURAS (NÃO DELIRAM)
-    # ==============================
-
-    # Se contém "casa" mas não contém praia/litoral/mar → é residência
-    if "casa" in msg:
-        if not any(x in msg for x in ["praia", "litoral", "mar", "beira-mar"]):
-            return "residencia"
-
-    # Se contém apartamento
-    if any(x in msg for x in ["apartamento", "apê"]):
-        return "apartamento"
-
-    # Se contém cobertura
-    if "cobertura" in msg:
-        return "cobertura"
-
-    # Se contém studio
-    if "studio" in msg or "stúdio" in msg:
-        return "studio"
-
-    # Se contém comércio
-    if any(x in msg for x in ["loja", "comercial", "escritório"]):
-        return "comercial"
-
-    # Se contém alto andar
-    if any(x in msg for x in ["alto andar", "andar alto", "vista alta"]):
-        return "alto_andar"
-
-    # Se contém praia
     if any(x in msg for x in ["praia", "litoral", "beira-mar", "mar"]):
         return "casa_praia"
 
-    # Se contém campo
     if any(x in msg for x in ["campo", "sítio", "chácara", "fazenda"]):
         return "casa_campo"
 
-    # Se contém rural
     if any(x in msg for x in ["rural", "fazenda", "sítio"]):
         return "rural"
 
-    # ==============================
-    # 2) FALLBACK — LLM
-    # ==============================
+    if any(x in msg for x in ["alto andar", "andar alto", "vista alta"]):
+        return "alto_andar"
+
+    if any(x in msg for x in ["apartamento", "apê"]):
+        return "apartamento"
+
+    if "cobertura" in msg:
+        return "cobertura"
+
+    if "studio" in msg or "stúdio" in msg:
+        return "studio"
+
+    if any(x in msg for x in ["loja", "comercial", "escritório"]):
+        return "comercial"
+
+    if "casa" in msg:
+        return "residencia"
 
     prompt = f"""
     Analise a mensagem abaixo e identifique o **contexto imobiliário principal**.
@@ -84,18 +66,10 @@ def classify_context(message: str) -> str:
 
 
 def get_context_prompt(context: str) -> str:
-    """
-    Retorna instruções específicas de escrita baseadas no contexto identificado.
-    Isso funciona como o módulo independente de contexto,
-    ajudando o modelo a adaptar a copy ao tipo de imóvel.
-    """
 
     if not context or context == "none":
         return ""
 
-    # ------------------------------------------------------------
-    # RESIDÊNCIA (casa comum)
-    # ------------------------------------------------------------
     if context == "residencia":
         return """
 📌 CONTEXTO — RESIDÊNCIA
@@ -106,9 +80,6 @@ def get_context_prompt(context: str) -> str:
 - Destaque aspectos como luz, conforto, rotina, vida em família, garagem, quintal, etc.
 """
 
-    # ------------------------------------------------------------
-    # APARTAMENTO
-    # ------------------------------------------------------------
     if context == "apartamento":
         return """
 📌 CONTEXTO — APARTAMENTO
@@ -117,9 +88,6 @@ def get_context_prompt(context: str) -> str:
 - Mencione circulação, integração, segurança e conveniência.
 """
 
-    # ------------------------------------------------------------
-    # CASA DE PRAIA
-    # ------------------------------------------------------------
     if context == "casa_praia":
         return """
 📌 CONTEXTO — CASA DE PRAIA
@@ -129,9 +97,6 @@ def get_context_prompt(context: str) -> str:
 - A copy deve transmitir leveza e vida desacelerada.
 """
 
-    # ------------------------------------------------------------
-    # CASA DE CAMPO
-    # ------------------------------------------------------------
     if context == "casa_campo":
         return """
 📌 CONTEXTO — CASA DE CAMPO
@@ -140,9 +105,6 @@ def get_context_prompt(context: str) -> str:
 - Evitar metáforas exageradas.
 """
 
-    # ------------------------------------------------------------
-    # COBERTURA
-    # ------------------------------------------------------------
     if context == "cobertura":
         return """
 📌 CONTEXTO — COBERTURA
@@ -151,9 +113,6 @@ def get_context_prompt(context: str) -> str:
 - Evite apelos de luxo.
 """
 
-    # ------------------------------------------------------------
-    # STUDIO
-    # ------------------------------------------------------------
     if context == "studio":
         return """
 📌 CONTEXTO — STUDIO
@@ -161,9 +120,6 @@ def get_context_prompt(context: str) -> str:
 - Tom jovem, direto, funcional.
 """
 
-    # ------------------------------------------------------------
-    # COMERCIAL
-    # ------------------------------------------------------------
     if context == "comercial":
         return """
 📌 CONTEXTO — IMÓVEL COMERCIAL
@@ -171,9 +127,6 @@ def get_context_prompt(context: str) -> str:
 - Foco em fluxo, visibilidade, localização, funcionalidade do uso diário.
 """
 
-    # ------------------------------------------------------------
-    # RURAL
-    # ------------------------------------------------------------
     if context == "rural":
         return """
 📌 CONTEXTO — IMÓVEL RURAL
@@ -181,9 +134,6 @@ def get_context_prompt(context: str) -> str:
 - Tom mais descritivo, prático e direto.
 """
 
-    # ------------------------------------------------------------
-    # APARTAMENTO EM ANDAR ALTO
-    # ------------------------------------------------------------
     if context == "alto_andar":
         return """
 📌 CONTEXTO — APARTAMENTO EM ANDAR ALTO
@@ -191,9 +141,6 @@ def get_context_prompt(context: str) -> str:
 - Evitar qualquer tom luxuoso explícito.
 """
 
-    # ------------------------------------------------------------
-    # CONTEXTO URBANO (cidade)
-    # ------------------------------------------------------------
     if context == "cidade":
         return """
 📌 CONTEXTO — CIDADE
